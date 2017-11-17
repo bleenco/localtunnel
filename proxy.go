@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"regexp"
+	"time"
 )
 
 type connection struct {
@@ -47,15 +49,10 @@ func (p *Proxy) setup() {
 }
 
 func (p *Proxy) listen() {
-	defer func() {
-		p.server.Close()
-		fmt.Printf("[%s] TCP server closed.", p.id)
-	}()
-
 	for {
 		conn, err := p.server.Accept()
 		if err != nil {
-			fmt.Printf("[%s] Error accepting socket connection: %s", p.id, err)
+			break
 		}
 
 		go p.handleConnection(conn)
@@ -66,17 +63,23 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 	c := &connection{conn: conn, resp: make(chan []byte)}
 	p.connections = append(p.connections, c)
 	fmt.Printf("[%s] New connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
+	// notify := make(chan error)
 
-	defer func() {
-		fmt.Printf("[%s] Closing connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
-		c.conn.Close()
-		c.conn = nil
-		p.cleanupConnections()
+	go func() {
+		for {
+			var buf bytes.Buffer
+			io.Copy(&buf, conn)
+
+			if buf.Len() == 0 {
+				fmt.Printf("[%s] Closing connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
+				c.conn.Close()
+				c.conn = nil
+				p.cleanupConnections()
+			}
+
+			c.resp <- buf.Bytes()
+		}
 	}()
-
-	var buf bytes.Buffer
-	io.Copy(&buf, conn)
-	c.resp <- buf.Bytes()
 }
 
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -125,5 +128,24 @@ func (p *Proxy) cleanupConnections() {
 		if conn.conn == nil {
 			p.connections = removeConnection(p.connections, i)
 		}
+	}
+
+	if len(p.connections) == 0 {
+		p.server.Close()
+		fmt.Printf("[%s] TCP server closed.\n", p.id)
+		delete(proxies, p.id)
+	}
+}
+
+func connIsClosed(c *connection) {
+	c.conn.SetReadDeadline(time.Now())
+	var one []byte
+	if _, err := c.conn.Read(one); err == io.EOF {
+		log.Printf("Client disconnect: %s\n", c.conn.RemoteAddr())
+		c.conn.Close()
+		c.conn = nil
+	} else {
+		var zero time.Time
+		c.conn.SetReadDeadline(zero)
 	}
 }
