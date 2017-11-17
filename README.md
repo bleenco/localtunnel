@@ -1,6 +1,6 @@
 # localtunnel
 
-Another rewrite of localtunnel, alternative to ngrok. This time in Golang.
+Expose yourself from NAT or Firewall to the World!
 
 ## Features
 

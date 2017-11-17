@@ -64,7 +64,6 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 	c := &connection{conn: conn, resp: make(chan []byte)}
 	p.connections = append(p.connections, c)
 	fmt.Printf("[%s] New connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
-	// notify := make(chan error)
 
 	go func() {
 		for {
