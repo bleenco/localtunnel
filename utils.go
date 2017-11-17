@@ -1,14 +1,13 @@
-package vex
+package localtunnel
 
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 )
 
-func removeConnection(s []net.Conn) []net.Conn {
-	return append(s[:0], s[1:]...)
+func removeConnection(s []*connection, i int) []*connection {
+	return append(s[:i], s[i+1:]...)
 }
 
 func toJSON(data interface{}) string {

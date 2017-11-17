@@ -1,4 +1,4 @@
-package vex
+package localtunnel
 
 import (
 	"crypto/rand"

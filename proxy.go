@@ -1,10 +1,10 @@
-package vex
+package localtunnel
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"regexp"
@@ -19,7 +19,6 @@ type connection struct {
 // Proxy holds data of Proxy instance
 type Proxy struct {
 	id          string
-	started     bool
 	server      net.Listener
 	port        int
 	connections []*connection
@@ -29,20 +28,12 @@ var proxies = make(map[string]*Proxy)
 
 // NewProxy creates new Proxy instance
 func NewProxy(id string) *Proxy {
-	p := &Proxy{
-		id:      id,
-		started: false,
-	}
-
+	p := &Proxy{id: id}
 	proxies[id] = p
 	return p
 }
 
 func (p *Proxy) setup() {
-	if p.started {
-		fmt.Printf("Proxy %s already started\n", p.id)
-	}
-
 	listener, err := net.Listen("tcp4", ":0")
 	if err != nil {
 		fmt.Printf("Error starting TCP server on %s\n", listener.Addr().String())
@@ -51,7 +42,6 @@ func (p *Proxy) setup() {
 
 	fmt.Printf("[%s] TCP server listening on %s\n", p.id, listener.Addr().String())
 
-	p.started = true
 	p.server = listener
 	p.port = listener.Addr().(*net.TCPAddr).Port
 }
@@ -75,22 +65,22 @@ func (p *Proxy) listen() {
 func (p *Proxy) handleConnection(conn net.Conn) {
 	c := &connection{conn: conn, resp: make(chan []byte)}
 	p.connections = append(p.connections, c)
-	fmt.Printf("[%s] New connection from %s\n", p.id, conn.LocalAddr().String())
+	fmt.Printf("[%s] New connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
 
-	go func() {
-		defer c.conn.Close()
-
-		for {
-			res, err := ioutil.ReadAll(conn)
-			if err != nil {
-				fmt.Printf("Error: %s", err)
-			}
-			c.resp <- res
-		}
+	defer func() {
+		fmt.Printf("[%s] Closing connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
+		c.conn.Close()
+		c.conn = nil
+		p.cleanupConnections()
 	}()
+
+	var buf bytes.Buffer
+	io.Copy(&buf, conn)
+	c.resp <- buf.Bytes()
 }
 
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("[%s] Request %s\n", p.id, r.URL)
 	c, err := p.getConnection()
 	if err != nil {
 		fmt.Printf("Error: %s", err)
@@ -128,4 +118,12 @@ func (p *Proxy) getConnection() (*connection, error) {
 	}
 
 	return nil, errors.New("connection not found")
+}
+
+func (p *Proxy) cleanupConnections() {
+	for i, conn := range p.connections {
+		if conn.conn == nil {
+			p.connections = removeConnection(p.connections, i)
+		}
+	}
 }

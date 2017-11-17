@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bleenco/vex"
+	"github.com/bleenco/localtunnel"
 )
 
 var httpAddr = flag.String("http", ":1234", "http listen address")
@@ -19,7 +19,7 @@ func main() {
 	flag.Parse()
 	stop := make(chan os.Signal, 1)
 
-	httpServer := vex.SetupServer(*httpAddr)
+	httpServer := localtunnel.SetupServer(*httpAddr)
 
 	go func() {
 		fmt.Printf("Listening on http://0.0.0.0%s\n", httpServer.Addr)
