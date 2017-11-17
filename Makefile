@@ -14,3 +14,8 @@ get_tools:
 	@echo "==> Installing tools..."
 	@go get -u github.com/mitchellh/gox
 
+docker_image:
+	@echo "==> Building Docker image localtunnel..."
+	make clean
+	make build
+	docker build -t localtunnel .
