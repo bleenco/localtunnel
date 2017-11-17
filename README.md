@@ -1,6 +1,10 @@
 # localtunnel
 
-Expose yourself from NAT or Firewall to the World!
+Expose yourself behind NAT or Firewall to the World!
+
+## Compatibility
+
+Both server and client are compatible with Node.JS version of localtunnel.
 
 ## Features
 
@@ -77,21 +81,78 @@ docker run -dit --restart always --net host --name localtunnel localtunnel
 
 ## Usage Example
 
-Start the server on port 1234 hosting on domain example.com.
+Start the server hosted on domain example.com.
 
 ```sh
-./lt-server -p 1234 -d example.com
+./lt-server -d example.com
 ```
 
 Create the tunnel to localhost:8000.
 
 ```sh
-./lt-client -h http://example.com:1234 -p 8000
+./lt-client -h http://example.com -p 8000
 ```
 
-You should get generated URL, something like `7e400f6d.example.com`.
+You should get generated URL, something like `http://7e400f6d.example.com`.
 
-Open your browser on `http://7e400f6d.example.com:1234` to check if its working (it should :) then share the URL with your friends.
+Open your browser on `http://7e400f6d.example.com` to check if its working then share the URL with your friends.
+
+## Use Locally (development)
+
+For usage on local machine you first need to setup wildcard DNS for localhost development.
+
+Installation guide for MacOS.
+
+```sh
+brew install dnsmasq
+```
+
+At the bottom of `/usr/local/etc/dnsmasq.conf` add
+
+```
+address=/localnet/127.0.0.1
+```
+
+Start `dnsmasq`.
+
+```sh
+sudo brew services start dnsmasq
+```
+
+For MacOS to resolve requests from `*.localnet` to `localhost` we need to add a resolver.
+
+```sh
+sudo mkdir /etc/resolver
+sudo touch /etc/resolver/localnet
+```
+
+Add following line to `/etc/resolver/localnet`
+
+```
+nameserver 127.0.0.1
+```
+
+Reboot the machine to enable the resolver.
+
+Start the your server using `-d localnet` flag
+
+```sh
+go run cmd/server/lt-server.go -d localnet -p 80
+```
+
+Start some web service, for example on port 6510, then connect with the `lt-client`.
+
+```sh
+go run cmd/client/lt-client -h http://localhost -p 6510
+```
+
+and you should get something like
+
+```
+your url is: http://33412dea.localnet
+```
+
+Open the URL in the browser and it should work.
 
 ## Licence
 
