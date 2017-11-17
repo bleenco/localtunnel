@@ -72,7 +72,7 @@ make docker_image
 Run container from `localtunnel` image.
 
 ```sh
-docker run -dit --restart always -p 1234:1234 --name localtunnel localtunnel
+docker run -dit --restart always --net host --name localtunnel localtunnel
 ```
 
 ## Usage Example

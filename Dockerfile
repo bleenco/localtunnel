@@ -3,9 +3,9 @@ FROM alpine:latest
 LABEL maintainer="Jan Kuri <jan@bleenco.com>"
 
 ENV DOMAIN=bleenco.space
-ENV SECURE=false
+ENV SECURE=true
 
-RUN apk --no-cache add tini curl
+RUN apk --no-cache add tini curl ca-certificates
 COPY ./build/linux_amd64/lt-server /lt-server
 EXPOSE 1234
 
