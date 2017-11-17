@@ -1,10 +1,12 @@
 package localtunnel
 
 import (
-	"crypto/tls"
 	"io"
 	"net/http"
+	"strings"
 )
+
+var domain string
 
 type createdResp struct {
 	ID      string `json:"id,omitempty"`
@@ -17,14 +19,23 @@ type statusResponse struct {
 	Tunnels int `json:"tunnels"`
 }
 
+type infoResponse struct {
+	Info string `json:"info"`
+}
+
+func handleInfo(w http.ResponseWriter, r *http.Request) {
+	info := &infoResponse{Info: "localtunnel server running on " + domain}
+	io.WriteString(w, toJSON(info))
+}
+
 func handleNew(w http.ResponseWriter, r *http.Request) {
-	id := "abc123"
+	id := randID()
 	proxy := NewProxy(id)
 	proxy.setup()
 
 	resp := &createdResp{
 		ID:      id,
-		URL:     id + ".jan",
+		URL:     id + "." + domain,
 		Port:    proxy.port,
 		MaxConn: 10,
 	}
@@ -34,9 +45,11 @@ func handleNew(w http.ResponseWriter, r *http.Request) {
 }
 
 // SetupServer creates main HTTP server
-func SetupServer(addr string) *http.Server {
+func SetupServer(port, serverDomain string) *http.Server {
+	domain = serverDomain
+
 	server := &http.Server{
-		Addr: addr,
+		Addr: ":" + port,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.EscapedPath()
 			if path == "/api/status" {
@@ -47,12 +60,18 @@ func SetupServer(addr string) *http.Server {
 				if _, ok := params["new"]; ok {
 					handleNew(w, r)
 				} else {
-					proxy := proxies["abc123"]
-					proxy.handleRequest(w, r)
+					hostname := r.Host
+					id := strings.Split(hostname, ".")[0]
+
+					proxy, ok := proxies[id]
+					if !ok {
+						handleInfo(w, r)
+					} else {
+						proxy.handleRequest(w, r)
+					}
 				}
 			}
 		}),
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 
 	return server

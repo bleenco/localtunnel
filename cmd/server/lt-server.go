@@ -13,13 +13,14 @@ import (
 	"github.com/bleenco/localtunnel"
 )
 
-var httpAddr = flag.String("http", ":1234", "http listen address")
+var port = flag.String("p", "1234", "http listen port")
+var domain = flag.String("d", "local.host", "server domain")
 
 func main() {
 	flag.Parse()
 	stop := make(chan os.Signal, 1)
 
-	httpServer := localtunnel.SetupServer(*httpAddr)
+	httpServer := localtunnel.SetupServer(*port, *domain)
 
 	go func() {
 		fmt.Printf("Listening on http://0.0.0.0%s\n", httpServer.Addr)
