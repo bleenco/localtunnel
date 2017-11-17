@@ -48,7 +48,7 @@ func NewClient(url string) *Client {
 }
 
 // DefaultClient is the default Client and is used by NewLocalTunnel and NewTunnel.
-var DefaultClient = NewClient("https://localtunnel.me")
+var DefaultClient = NewClient("https://bleenco.space")
 
 // NewLocalTunnel create a tunnel for a server in a given port from localhost using the DefaultClient.
 func NewLocalTunnel(port int) *Tunnel {
@@ -92,7 +92,7 @@ func (t *Tunnel) Open() error {
 	return t.OpenAs("?new")
 }
 
-// Open setup the tunnel creating connections between the remote and local servers with a custom subdomain.
+// OpenAs setup the tunnel creating connections between the remote and local servers with a custom subdomain.
 func (t *Tunnel) OpenAs(subdomain string) error {
 	t.m.Lock()
 	defer t.m.Unlock()
@@ -183,8 +183,6 @@ func (c *conn) open() {
 		c.t.Close()
 		return
 	}
-
-	fmt.Println(net.JoinHostPort(c.t.RemoteHost(), strconv.Itoa(c.t.RemotePort())), net.JoinHostPort(c.t.LocalHost(), strconv.Itoa(c.t.LocalPort())))
 
 	c.pipe()
 }

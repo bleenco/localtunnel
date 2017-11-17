@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 )
 
 type connection struct {
@@ -134,18 +132,5 @@ func (p *Proxy) cleanupConnections() {
 		p.server.Close()
 		fmt.Printf("[%s] TCP server closed.\n", p.id)
 		delete(proxies, p.id)
-	}
-}
-
-func connIsClosed(c *connection) {
-	c.conn.SetReadDeadline(time.Now())
-	var one []byte
-	if _, err := c.conn.Read(one); err == io.EOF {
-		log.Printf("Client disconnect: %s\n", c.conn.RemoteAddr())
-		c.conn.Close()
-		c.conn = nil
-	} else {
-		var zero time.Time
-		c.conn.SetReadDeadline(zero)
 	}
 }
