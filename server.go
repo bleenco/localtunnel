@@ -7,6 +7,7 @@ import (
 )
 
 var domain string
+var secure bool
 
 type createdResp struct {
 	ID      string `json:"id,omitempty"`
@@ -24,7 +25,8 @@ type infoResponse struct {
 }
 
 func handleInfo(w http.ResponseWriter, r *http.Request) {
-	info := &infoResponse{Info: "localtunnel server running on " + domain}
+	host := getProto() + domain
+	info := &infoResponse{Info: "localtunnel server running on " + host}
 	io.WriteString(w, toJSON(info))
 }
 
@@ -35,7 +37,7 @@ func handleNew(w http.ResponseWriter, r *http.Request) {
 
 	resp := &createdResp{
 		ID:      id,
-		URL:     id + "." + domain,
+		URL:     getProto() + id + "." + domain,
 		Port:    proxy.port,
 		MaxConn: 10,
 	}
@@ -45,8 +47,9 @@ func handleNew(w http.ResponseWriter, r *http.Request) {
 }
 
 // SetupServer creates main HTTP server
-func SetupServer(port, serverDomain string) *http.Server {
+func SetupServer(port, serverDomain string, isSecure bool) *http.Server {
 	domain = serverDomain
+	secure = isSecure
 
 	server := &http.Server{
 		Addr: ":" + port,
@@ -75,4 +78,12 @@ func SetupServer(port, serverDomain string) *http.Server {
 	}
 
 	return server
+}
+
+func getProto() string {
+	if secure {
+		return "https://"
+	}
+
+	return "http://"
 }

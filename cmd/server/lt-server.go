@@ -15,15 +15,23 @@ import (
 
 var port = flag.String("p", "1234", "http listen port")
 var domain = flag.String("d", "local.host", "server domain")
+var secure = flag.Bool("s", false, "is https")
 
 func main() {
 	flag.Parse()
 	stop := make(chan os.Signal, 1)
 
-	httpServer := localtunnel.SetupServer(*port, *domain)
+	httpServer := localtunnel.SetupServer(*port, *domain, *secure)
 
 	go func() {
-		fmt.Printf("Listening on http://0.0.0.0%s\n", httpServer.Addr)
+		var proto string
+		if *secure {
+			proto = "https://"
+		} else {
+			proto = "http://"
+		}
+
+		fmt.Printf("Listening on %s0.0.0.0%s\n", proto, httpServer.Addr)
 		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 			fmt.Printf("Error: %s", err)
 			return
