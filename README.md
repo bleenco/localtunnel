@@ -52,13 +52,27 @@ cd $GOPATH/src/github.com/bleenco/localtunnel
 Install tools.
 
 ```sh
-make install_tools
+make get_tools
 ```
 
 Build the project.
 
 ```sh
 make build
+```
+
+## Docker Image
+
+Change ENV DOMAIN and ENV SECURE variables in `Dockerfile` to fit your needs, then build Docker image.
+
+```sh
+make docker_image
+```
+
+Run container from `localtunnel` image.
+
+```sh
+docker run -dit --restart always -p 1234:1234 --name localtunnel localtunnel
 ```
 
 ## Usage Example
