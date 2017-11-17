@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -100,15 +101,15 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	payload := <-c.resp
 	splitted := regexp.MustCompile(`\r\n\r\n`).Split(string(payload), 2)
-	_, body := splitted[0], splitted[1]
+	headers, body := splitted[0], splitted[1]
 
-	// splittedHeaders := strings.SplitN(headers, "\r\n", 2)
-	// statusStr, headers := splittedHeaders[0], splittedHeaders[1]
+	splittedHeaders := strings.SplitN(headers, "\r\n", 2)
+	_, headers = splittedHeaders[0], splittedHeaders[1]
 
-	// for _, header := range strings.Split(headers, "\r\n") {
-	// 	split := strings.Split(header, ":")
-	// 	w.Header()[split[0]] = strings.Split(split[1], "")
-	// }
+	for _, header := range strings.Split(headers, "\r\n") {
+		split := strings.Split(header, ":")
+		w.Header().Set(strings.TrimSpace(split[0]), strings.TrimSpace(split[1]))
+	}
 
 	io.WriteString(w, body)
 }
