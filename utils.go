@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 func removeConnection(s []*connection, i int) []*connection {
@@ -25,4 +26,23 @@ func copyHeader(dst, src http.Header) {
 		copy(vv, v)
 		dst[k] = vv
 	}
+}
+
+func isWebSocketRequest(r *http.Request) bool {
+	contains := func(key, val string) bool {
+		vv := strings.Split(r.Header.Get(key), ",")
+		for _, v := range vv {
+			if val == strings.ToLower(strings.TrimSpace(v)) {
+				return true
+			}
+		}
+		return false
+	}
+	if !contains("Connection", "upgrade") {
+		return false
+	}
+	if !contains("Upgrade", "websocket") {
+		return false
+	}
+	return true
 }

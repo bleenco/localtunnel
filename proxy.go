@@ -62,14 +62,48 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 	c := &connection{conn: conn, resp: make(chan []byte)}
 	p.connections = append(p.connections, c)
 	fmt.Printf("[%s] New connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
+}
+
+func (p *Proxy) handleWebSocketRequest(w http.ResponseWriter, r *http.Request, destConn net.Conn) {
+	fmt.Printf("[%s] Request (WebSocket) %s\n", p.id, r.URL)
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "Not a hijacker?", 500)
+		return
+	}
+	nc, _, err := hj.Hijack()
+	if err != nil {
+		fmt.Printf("[%s] hijack error: %s\n", p.id, err)
+		return
+	}
+	defer nc.Close()
+	defer destConn.Close()
+
+	err = r.Write(destConn)
+	if err != nil {
+		fmt.Printf("[%s] error copying request to target: %s\n", p.id, err)
+		return
+	}
+	errc := make(chan error, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		_, err := io.Copy(dst, src)
+		errc <- err
+	}
+	go cp(destConn, nc)
+	go cp(nc, destConn)
+	<-errc
+}
+
+func (p *Proxy) handleHTTPRequest(w http.ResponseWriter, r *http.Request, c *connection) {
+	fmt.Printf("[%s] Request %s\n", p.id, r.URL)
 
 	go func() {
 		for {
 			var buf bytes.Buffer
-			io.Copy(&buf, conn)
+			io.Copy(&buf, c.conn)
 
 			if buf.Len() == 0 {
-				fmt.Printf("[%s] Closing connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
+				fmt.Printf("[%s] Closing connection %s <> %s\n", p.id, c.conn.RemoteAddr().String(), c.conn.LocalAddr().String())
 				c.conn.Close()
 				c.conn = nil
 				p.cleanupConnections()
@@ -78,23 +112,11 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 			c.resp <- buf.Bytes()
 		}
 	}()
-}
-
-func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("[%s] Request %s\n", p.id, r.URL)
-	c, err := p.getConnection()
-	if err != nil {
-		fmt.Printf("Error: %s", err)
-		return
-	}
-
-	c.inUse = true
-	destConn := c.conn
 
 	method := r.Method
 	path := r.URL.EscapedPath()
 
-	destConn.Write([]byte(method + " " + path + "\r\n\r\n"))
+	c.conn.Write([]byte(method + " " + path + "\r\n\r\n"))
 
 	payload := <-c.resp
 	splitted := regexp.MustCompile(`\r\n\r\n`).Split(string(payload), 2)
@@ -109,6 +131,23 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	io.WriteString(w, body)
+}
+
+func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
+	c, err := p.getConnection()
+	if err != nil {
+		fmt.Printf("Error: %s", err)
+		return
+	}
+
+	c.inUse = true
+	destConn := c.conn
+
+	if isWebSocketRequest(r) {
+		p.handleWebSocketRequest(w, r, destConn)
+	} else {
+		p.handleHTTPRequest(w, r, c)
+	}
 }
 
 func (p *Proxy) getConnection() (*connection, error) {
