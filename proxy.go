@@ -1,35 +1,42 @@
 package localtunnel
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"regexp"
-	"strings"
+
+	"github.com/apex/log"
+	"github.com/dustin/go-humanize"
 )
 
-type connection struct {
-	conn  net.Conn
-	resp  chan []byte
-	inUse bool
+// Socket is a TCP tunnel established between the client and server
+type Socket struct {
+	id            string
+	conn          net.Conn
+	inUse         bool
+	done          chan bool
+	sentBytes     uint64
+	receivedBytes uint64
 }
 
-// Proxy holds data of Proxy instance
+// Proxy holds data of the Proxy TCP Server
 type Proxy struct {
-	id          string
-	server      net.Listener
-	port        int
-	connections []*connection
+	id      string
+	server  net.Listener
+	port    int
+	sockets []*Socket
+	logger  log.Interface
 }
 
 var proxies = make(map[string]*Proxy)
 
 // NewProxy creates new Proxy instance
 func NewProxy(id string) *Proxy {
-	p := &Proxy{id: id}
+	logContext := log.WithFields(log.Fields{
+		"proxyID": id,
+	})
+	p := &Proxy{id: id, logger: logContext}
 	proxies[id] = p
 	return p
 }
@@ -37,11 +44,11 @@ func NewProxy(id string) *Proxy {
 func (p *Proxy) setup() {
 	listener, err := net.Listen("tcp4", ":0")
 	if err != nil {
-		fmt.Printf("Error starting TCP server on %s\n", listener.Addr().String())
+		p.logger.Errorf("error starting server on %s", listener.Addr().String())
 		return
 	}
 
-	fmt.Printf("[%s] TCP server listening on %s\n", p.id, listener.Addr().String())
+	p.logger.Infof("tcp server listening on %s", listener.Addr().String())
 
 	p.server = listener
 	p.port = listener.Addr().(*net.TCPAddr).Port
@@ -54,18 +61,28 @@ func (p *Proxy) listen() {
 			break
 		}
 
-		go p.handleConnection(conn)
+		s := &Socket{id: randID(), conn: conn, done: make(chan bool)}
+		p.sockets = append(p.sockets, s)
+		p.logger.WithField("socketID", s.id).Infof("new tcp connection %s <> %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 	}
 }
 
-func (p *Proxy) handleConnection(conn net.Conn) {
-	c := &connection{conn: conn, resp: make(chan []byte)}
-	p.connections = append(p.connections, c)
-	fmt.Printf("[%s] New connection %s <> %s\n", p.id, conn.RemoteAddr().String(), conn.LocalAddr().String())
-}
+func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
+	socket, err := p.getSocket()
+	if err != nil {
+		p.logger.Errorf("error finding available tcp connection: %s", err)
+		return
+	}
 
-func (p *Proxy) handleWebSocketRequest(w http.ResponseWriter, r *http.Request, destConn net.Conn) {
-	fmt.Printf("[%s] Request (WebSocket) %s\n", p.id, r.URL)
+	socket.inUse = true
+	websocket := isWebSocketRequest(r)
+
+	if websocket {
+		p.logger.WithField("socketID", socket.id).Infof("websocket request: %s %s", r.Method, r.URL)
+	} else {
+		p.logger.WithField("socketID", socket.id).Infof("request: %s %s", r.Method, r.URL)
+	}
+
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Not a hijacker?", 500)
@@ -73,103 +90,76 @@ func (p *Proxy) handleWebSocketRequest(w http.ResponseWriter, r *http.Request, d
 	}
 	nc, _, err := hj.Hijack()
 	if err != nil {
-		fmt.Printf("[%s] hijack error: %s\n", p.id, err)
+		p.logger.Errorf("hijack error %s", err)
 		return
 	}
 	defer nc.Close()
-	defer destConn.Close()
+	defer socket.conn.Close()
 
-	err = r.Write(destConn)
+	err = r.Write(socket.conn)
 	if err != nil {
-		fmt.Printf("[%s] error copying request to target: %s\n", p.id, err)
-		return
-	}
-	errc := make(chan error, 2)
-	cp := func(dst io.Writer, src io.Reader) {
-		_, err := io.Copy(dst, src)
-		errc <- err
-	}
-	go cp(destConn, nc)
-	go cp(nc, destConn)
-	<-errc
-}
-
-func (p *Proxy) handleHTTPRequest(w http.ResponseWriter, r *http.Request, c *connection) {
-	fmt.Printf("[%s] Request %s\n", p.id, r.URL)
-
-	go func() {
-		for {
-			var buf bytes.Buffer
-			io.Copy(&buf, c.conn)
-
-			if buf.Len() == 0 {
-				fmt.Printf("[%s] Closing connection %s <> %s\n", p.id, c.conn.RemoteAddr().String(), c.conn.LocalAddr().String())
-				c.conn.Close()
-				c.conn = nil
-				p.cleanupConnections()
-			}
-
-			c.resp <- buf.Bytes()
-		}
-	}()
-
-	method := r.Method
-	path := r.URL.EscapedPath()
-
-	c.conn.Write([]byte(method + " " + path + "\r\n\r\n"))
-
-	payload := <-c.resp
-	splitted := regexp.MustCompile(`\r\n\r\n`).Split(string(payload), 2)
-	headers, body := splitted[0], splitted[1]
-
-	splittedHeaders := strings.SplitN(headers, "\r\n", 2)
-	_, headers = splittedHeaders[0], splittedHeaders[1]
-
-	for _, header := range strings.Split(headers, "\r\n") {
-		split := strings.Split(header, ":")
-		w.Header().Set(strings.TrimSpace(split[0]), strings.TrimSpace(split[1]))
-	}
-
-	io.WriteString(w, body)
-}
-
-func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
-	c, err := p.getConnection()
-	if err != nil {
-		fmt.Printf("Error: %s", err)
+		p.logger.WithField("socketID", socket.id).Errorf("error copying request to target: %s", err)
 		return
 	}
 
-	c.inUse = true
-	destConn := c.conn
+	go p.pipe(socket.conn, nc, socket)
+	go p.pipe(nc, socket.conn, socket)
 
-	if isWebSocketRequest(r) {
-		p.handleWebSocketRequest(w, r, destConn)
-	} else {
-		p.handleHTTPRequest(w, r, c)
+	<-socket.done
+	p.logger.WithField("socketID", socket.id).Infof("socket closed. sent bytes: %d (%s) received bytes: %d (%s)", socket.sentBytes, humanize.Bytes(socket.sentBytes), socket.receivedBytes, humanize.Bytes(socket.receivedBytes))
+	socket.conn.Close()
+	socket.conn = nil
+	p.cleanupSockets()
+}
+
+func (p *Proxy) pipe(src, dst io.ReadWriter, socket *Socket) {
+	isOut := dst == socket.conn
+
+	buf := make([]byte, 0xffff)
+	for {
+		n, err := src.Read(buf)
+		if err != nil {
+			socket.done <- true
+			return
+		}
+		b := buf[:n]
+
+		n, err = dst.Write(b)
+		if err != nil {
+			socket.done <- true
+			return
+		}
+
+		if isOut {
+			socket.sentBytes += uint64(n)
+		} else {
+			socket.receivedBytes += uint64(n)
+		}
+
+		p.logger.WithField("socketID", socket.id).Debugf("%d bytes transferred", uint64(n))
 	}
 }
 
-func (p *Proxy) getConnection() (*connection, error) {
-	for i := range p.connections {
-		if !p.connections[i].inUse {
-			return p.connections[i], nil
+func (p *Proxy) getSocket() (*Socket, error) {
+	for i := range p.sockets {
+		if !p.sockets[i].inUse {
+			return p.sockets[i], nil
 		}
 	}
 
-	return nil, errors.New("connection not found")
+	return nil, errors.New("socket not found")
 }
 
-func (p *Proxy) cleanupConnections() {
-	for i, conn := range p.connections {
-		if conn.conn == nil {
-			p.connections = removeConnection(p.connections, i)
+func (p *Proxy) cleanupSockets() {
+	for i, socket := range p.sockets {
+		if socket.conn == nil {
+			p.sockets = removeSocket(p.sockets, i)
 		}
 	}
 
-	if len(p.connections) == 0 {
+	if len(p.sockets) == 0 {
 		p.server.Close()
-		fmt.Printf("[%s] TCP server closed.\n", p.id)
+		p.logger.Warn("tcp server closed")
 		delete(proxies, p.id)
 	}
 }

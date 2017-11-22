@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/bleenco/localtunnel"
+
+	"github.com/apex/log"
+	"github.com/apex/log/handlers/text"
 )
 
 var port = flag.String("p", "1234", "http listen port")
@@ -18,6 +21,12 @@ var domain = flag.String("d", "local.host", "server domain")
 var secure = flag.Bool("s", false, "is https")
 
 func main() {
+	log.SetHandler(text.New(os.Stderr))
+
+	logger := log.WithFields(log.Fields{
+		"http": "server",
+	})
+
 	flag.Parse()
 	stop := make(chan os.Signal, 1)
 
@@ -31,7 +40,7 @@ func main() {
 			proto = "http://"
 		}
 
-		fmt.Printf("Listening on %s0.0.0.0%s\n", proto, httpServer.Addr)
+		logger.Infof("Listening on %s0.0.0.0%s", proto, httpServer.Addr)
 		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 			fmt.Printf("Error: %s", err)
 			return
@@ -44,10 +53,10 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	fmt.Printf("Shutting down...")
+	logger.Info("Shutting down...")
 	if err := httpServer.Shutdown(ctx); err != nil {
-		fmt.Printf("Error: %v\n", err)
+		logger.Errorf("Error: %v", err)
 	} else {
-		fmt.Println("Server stopped.")
+		logger.Info("Server stopped.")
 	}
 }

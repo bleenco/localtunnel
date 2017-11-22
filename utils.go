@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func removeConnection(s []*connection, i int) []*connection {
+func removeSocket(s []*Socket, i int) []*Socket {
 	return append(s[:i], s[i+1:]...)
 }
 
@@ -18,14 +18,6 @@ func toJSON(data interface{}) string {
 	}
 
 	return string(json)
-}
-
-func copyHeader(dst, src http.Header) {
-	for k, v := range src {
-		vv := make([]string, len(v))
-		copy(vv, v)
-		dst[k] = vv
-	}
 }
 
 func isWebSocketRequest(r *http.Request) bool {
