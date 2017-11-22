@@ -11,5 +11,5 @@ EXPOSE 1234
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD curl -f http://localhost:1234 || exit 1
 
-ENTRYPOINT ["/sbin/tini", "--"] CMD curl -f http://localhost:1234 || exit 1
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD /lt-server -p 1234 -d $DOMAIN -s=$SECURE
