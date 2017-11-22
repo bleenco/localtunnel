@@ -13,6 +13,11 @@ clean:
 get_tools:
 	@echo "==> Installing tools..."
 	@go get -u github.com/mitchellh/gox
+	@go get -u github.com/golang/dep/cmd/dep
+
+install:
+	@echo "==> Installing dependencies..."
+	@dep ensure
 
 docker_image:
 	@echo "==> Building Docker image localtunnel..."

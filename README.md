@@ -59,6 +59,12 @@ Install tools.
 make get_tools
 ```
 
+Install dependencies.
+
+```sh
+make install
+```
+
 Build the project.
 
 ```sh
