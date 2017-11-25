@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 
 	"github.com/apex/log"
 	"github.com/dustin/go-humanize"
@@ -27,6 +28,7 @@ type Proxy struct {
 	port    int
 	sockets []*Socket
 	logger  log.Interface
+	mux     sync.Mutex
 }
 
 var proxies = make(map[string]*Proxy)
@@ -61,10 +63,32 @@ func (p *Proxy) listen() {
 			break
 		}
 
-		s := &Socket{id: randID(), conn: conn, done: make(chan bool)}
-		p.sockets = append(p.sockets, s)
-		p.logger.WithField("socketID", s.id).Infof("new tcp connection %s <> %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
+		go p.handleConnection(conn)
 	}
+}
+
+func (p *Proxy) handleConnection(conn net.Conn) {
+	s := &Socket{id: randID(), conn: conn, done: make(chan bool)}
+	p.sockets = append(p.sockets, s)
+	p.logger.WithField("socketID", s.id).Infof("new tcp connection %s <> %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
+
+	// defer s.conn.Close()
+	// notify := make(chan error)
+	// go func() {
+	// 	buf := make([]byte, 1024)
+	// 	for {
+	// 		_, err := conn.Read(buf)
+	// 		if err != nil {
+	// 			notify <- err
+	// 			return
+	// 		}
+	// 	}
+	// }()
+
+	// err := <-notify
+	// if io.EOF == err {
+	// 	p.cleanUpSocket(s)
+	// }
 }
 
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -106,10 +130,6 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	go p.pipe(nc, socket.conn, socket)
 
 	<-socket.done
-	p.logger.WithField("socketID", socket.id).Infof("socket closed. sent bytes: %d (%s) received bytes: %d (%s)", socket.sentBytes, humanize.Bytes(socket.sentBytes), socket.receivedBytes, humanize.Bytes(socket.receivedBytes))
-	socket.conn.Close()
-	socket.conn = nil
-	p.cleanupSockets()
 }
 
 func (p *Proxy) pipe(src, dst io.ReadWriter, socket *Socket) {
@@ -150,10 +170,14 @@ func (p *Proxy) getSocket() (*Socket, error) {
 	return nil, errors.New("socket not found")
 }
 
-func (p *Proxy) cleanupSockets() {
-	for i, socket := range p.sockets {
-		if socket.conn == nil {
-			p.sockets = removeSocket(p.sockets, i)
+func (p *Proxy) cleanUpSocket(socket *Socket) {
+	p.mux.Lock()
+	for i, s := range p.sockets {
+		if s == socket {
+			s.conn.Close()
+			p.sockets = append(p.sockets[:i], p.sockets[i+1:]...)
+			p.logger.WithField("socketID", s.id).Warnf("socket closed. sent bytes: %d (%s) received bytes: %d (%s)", s.sentBytes, humanize.Bytes(s.sentBytes), s.receivedBytes, humanize.Bytes(s.receivedBytes))
+			continue
 		}
 	}
 
@@ -162,4 +186,5 @@ func (p *Proxy) cleanupSockets() {
 		p.logger.Warn("tcp server closed")
 		delete(proxies, p.id)
 	}
+	p.mux.Unlock()
 }

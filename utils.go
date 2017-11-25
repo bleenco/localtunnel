@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-func removeSocket(s []*Socket, i int) []*Socket {
-	return append(s[:i], s[i+1:]...)
-}
-
 func toJSON(data interface{}) string {
 	json, err := json.Marshal(data)
 	if err != nil {
