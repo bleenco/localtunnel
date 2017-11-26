@@ -137,38 +137,6 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	go io.Copy(socket.conn, nc)
 }
 
-func (p *Proxy) copy(dst, src io.ReadWriter, conn net.Conn) (err error) {
-	buf := make([]byte, 1024)
-	for {
-		nr, er := src.Read(buf)
-		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
-			if ew != nil {
-				err = ew
-				break
-			}
-			if nr != nw {
-				err = errors.New("short write")
-				break
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-
-	return err
-}
-
-func (p *Proxy) transfer(destination io.WriteCloser, source io.ReadCloser) {
-	defer destination.Close()
-	defer source.Close()
-	io.Copy(destination, source)
-}
-
 func (p *Proxy) getSocket() (*Socket, error) {
 	for i := range p.sockets {
 		if !p.sockets[i].inUse {
