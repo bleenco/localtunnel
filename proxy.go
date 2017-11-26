@@ -16,7 +16,6 @@ type Socket struct {
 	id            string
 	conn          net.Conn
 	inUse         bool
-	done          chan bool
 	sentBytes     uint64
 	receivedBytes uint64
 }
@@ -68,26 +67,22 @@ func (p *Proxy) listen() {
 }
 
 func (p *Proxy) handleConnection(conn net.Conn) {
-	s := &Socket{id: randID(), conn: conn, done: make(chan bool)}
+	s := &Socket{
+		id:   randID(),
+		conn: conn,
+	}
 	p.sockets = append(p.sockets, s)
 	p.logger.WithField("socketID", s.id).Infof("new tcp connection %s <> %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 
-	// defer s.conn.Close()
-	// notify := make(chan error)
-	// go func() {
-	// 	buf := make([]byte, 1024)
-	// 	for {
-	// 		_, err := conn.Read(buf)
-	// 		if err != nil {
-	// 			notify <- err
-	// 			return
+	// buf := make([]byte, 1024)
+	// for {
+	// 	_, err := s.conn.Read(buf)
+	// 	if err != nil {
+	// 		if err == io.EOF {
+	// 			p.cleanUpSocket(s)
 	// 		}
+	// 		return
 	// 	}
-	// }()
-
-	// err := <-notify
-	// if io.EOF == err {
-	// 	p.cleanUpSocket(s)
 	// }
 }
 
@@ -117,8 +112,6 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		p.logger.Errorf("hijack error %s", err)
 		return
 	}
-	defer nc.Close()
-	defer socket.conn.Close()
 
 	err = r.Write(socket.conn)
 	if err != nil {
@@ -126,38 +119,14 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go p.pipe(socket.conn, nc, socket)
-	go p.pipe(nc, socket.conn, socket)
-
-	<-socket.done
+	go p.transfer(socket.conn, nc)
+	go p.transfer(nc, socket.conn)
 }
 
-func (p *Proxy) pipe(src, dst io.ReadWriter, socket *Socket) {
-	isOut := dst == socket.conn
-
-	buf := make([]byte, 0xffff)
-	for {
-		n, err := src.Read(buf)
-		if err != nil {
-			socket.done <- true
-			return
-		}
-		b := buf[:n]
-
-		n, err = dst.Write(b)
-		if err != nil {
-			socket.done <- true
-			return
-		}
-
-		if isOut {
-			socket.sentBytes += uint64(n)
-		} else {
-			socket.receivedBytes += uint64(n)
-		}
-
-		p.logger.WithField("socketID", socket.id).Debugf("%d bytes transferred", uint64(n))
-	}
+func (p *Proxy) transfer(destination io.WriteCloser, source io.ReadCloser) {
+	defer destination.Close()
+	defer source.Close()
+	io.Copy(destination, source)
 }
 
 func (p *Proxy) getSocket() (*Socket, error) {
