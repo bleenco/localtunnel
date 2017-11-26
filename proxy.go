@@ -2,8 +2,6 @@ package localtunnel
 
 import (
 	"errors"
-	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -127,14 +125,33 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	go func(ch chan []byte) {
 		for {
 			data := <-ch
-			_, err := nc.Write(data)
+			n, err := nc.Write(data)
 			if err != nil {
-				fmt.Println(err)
+				p.cleanUpSocket(socket)
+				return
 			}
+			socket.sentBytes += uint64(n)
 		}
 	}(socket.data)
 
-	go io.Copy(socket.conn, nc)
+	go func() {
+		for {
+			buf := make([]byte, 0xffff)
+			n, err := nc.Read(buf)
+			if err != nil {
+				p.cleanUpSocket(socket)
+				return
+			}
+			b := buf[:n]
+
+			n, err = socket.conn.Write(b)
+			if err != nil {
+				p.cleanUpSocket(socket)
+				return
+			}
+			socket.receivedBytes += uint64(n)
+		}
+	}()
 }
 
 func (p *Proxy) getSocket() (*Socket, error) {
