@@ -2,6 +2,7 @@ package localtunnel
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -16,6 +17,7 @@ type Socket struct {
 	id            string
 	conn          net.Conn
 	inUse         bool
+	data          chan []byte
 	sentBytes     uint64
 	receivedBytes uint64
 }
@@ -70,20 +72,23 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 	s := &Socket{
 		id:   randID(),
 		conn: conn,
+		data: make(chan []byte),
 	}
 	p.sockets = append(p.sockets, s)
 	p.logger.WithField("socketID", s.id).Infof("new tcp connection %s <> %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 
-	// buf := make([]byte, 1024)
-	// for {
-	// 	_, err := s.conn.Read(buf)
-	// 	if err != nil {
-	// 		if err == io.EOF {
-	// 			p.cleanUpSocket(s)
-	// 		}
-	// 		return
-	// 	}
-	// }
+	buf := make([]byte, 0xffff)
+	for {
+		n, err := s.conn.Read(buf)
+		if err != nil {
+			p.cleanUpSocket(s)
+			return
+		}
+
+		b := make([]byte, len(buf))
+		copy(b, buf)
+		s.data <- b[:n]
+	}
 }
 
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -119,8 +124,43 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go p.transfer(socket.conn, nc)
-	go p.transfer(nc, socket.conn)
+	go func(ch chan []byte) {
+		for {
+			data := <-ch
+			_, err := nc.Write(data)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}(socket.data)
+
+	go io.Copy(socket.conn, nc)
+}
+
+func (p *Proxy) copy(dst, src io.ReadWriter, conn net.Conn) (err error) {
+	buf := make([]byte, 1024)
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = errors.New("short write")
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+
+	return err
 }
 
 func (p *Proxy) transfer(destination io.WriteCloser, source io.ReadCloser) {
