@@ -2,6 +2,7 @@ package localtunnel
 
 import (
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -79,8 +80,10 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 	for {
 		n, err := s.conn.Read(buf)
 		if err != nil {
-			p.cleanUpSocket(s)
-			return
+			if err == io.EOF {
+				p.cleanUpSocket(s)
+				return
+			}
 		}
 
 		b := make([]byte, len(buf))
@@ -139,8 +142,10 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			buf := make([]byte, 0xffff)
 			n, err := nc.Read(buf)
 			if err != nil {
-				p.cleanUpSocket(socket)
-				return
+				if err == io.EOF {
+					p.cleanUpSocket(socket)
+					return
+				}
 			}
 			b := buf[:n]
 
