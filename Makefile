@@ -5,7 +5,7 @@ OSARCH = "!darwin/arm !windows/arm"
 
 build:
 	mkdir -p ${OUTPUT_DIR}
-	GOARM=5 gox -os=${OS} -arch=${ARCH} -osarch=${OSARCH} -output "${OUTPUT_DIR}/{{.OS}}_{{.Arch}}/lt-{{.Dir}}" ./cmd/client ./cmd/server
+	GOARM=5 gox -os=${OS} -arch=${ARCH} -osarch=${OSARCH} -output "${OUTPUT_DIR}/lt-{{.Dir}}-{{.OS}}_{{.Arch}}" ./cmd/client ./cmd/server
 
 clean:
 	rm -rf ${OUTPUT_DIR}
