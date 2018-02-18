@@ -160,6 +160,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) getSocket() (*Socket, error) {
+	// here sockets[0] should be the persistent control connection
 	for i := range p.sockets {
 		if !p.sockets[i].inUse {
 			return p.sockets[i], nil

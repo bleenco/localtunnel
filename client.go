@@ -103,7 +103,7 @@ func (t *Tunnel) OpenAs(subdomain string) error {
 	}
 
 	t.closeCh = make(chan struct{})
-	t.establish()
+	t.establishControlConnection()
 	return nil
 }
 
@@ -156,11 +156,60 @@ func (t *Tunnel) setup(subdomain string) error {
 	return nil
 }
 
-func (t *Tunnel) establish() {
-	for i := 0; i < t.MaxConn(); i++ {
-		c := &conn{t: t}
-		go c.open()
+func (t *Tunnel) establishControlConnection() {
+	
+	var err error
+	
+	// open connection to LocalTunnelServer (i.e. proxy object)
+	con := &conn{t: t}
+	con.remoteConn, err = net.Dial("tcp", net.JoinHostPort(c.t.RemoteHost(), strconv.Itoa(c.t.RemotePort())))
+	
+	if err != nil {
+		
+		con.t.Close()
+		return
 	}
+	
+	go openConnectionOnDemand(con)
+}
+
+// Reads 'NewConnection' request, creates the connection and sends 'Created' response
+func openConnectionOnDemand(conn net.Conn) {
+	
+	connReader := bufio.NewReader(conn)
+	connWriter := bufio.NewWriter(conn)
+
+	for {
+		command, errR := connReader.ReadString('\n')
+		
+		if errR != nil {
+
+			conn.t.Close()
+			break
+		}
+		
+		msg := command[:len(command)-1]
+		
+		if msg == "NewConnection" {
+			
+			establish()
+			_, errW := connWriter.WriteString("Created\n")
+			
+			if errW != nil {
+					
+				conn.t.Close()
+				break;
+			}
+		
+			connWriter.Flush()
+		}
+	}
+}
+
+func (t *Tunnel) establish() {
+	
+	c := &conn{t: t}
+	go c.open()
 }
 
 type conn struct {
