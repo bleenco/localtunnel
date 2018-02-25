@@ -70,9 +70,7 @@ func SetupServer(port, serverDomain string, isSecure bool) *http.Server {
 					if !ok {
 						handleInfo(w, r)
 					} else {
-						// TODO proxy.askNewClientConnection()
-						// when clients replies OK, do handleRequest(w, r)
-						proxy.handleRequest(w, r)
+						proxy.askNewClientConnection(w, r)
 					}
 				}
 			}

@@ -19,6 +19,7 @@
 package localtunnel
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -157,57 +158,57 @@ func (t *Tunnel) setup(subdomain string) error {
 }
 
 func (t *Tunnel) establishControlConnection() {
-	
+
 	var err error
-	
+
 	// open connection to LocalTunnelServer (i.e. proxy object)
 	con := &conn{t: t}
-	con.remoteConn, err = net.Dial("tcp", net.JoinHostPort(c.t.RemoteHost(), strconv.Itoa(c.t.RemotePort())))
-	
+	con.remoteConn, err = net.Dial("tcp", net.JoinHostPort(con.t.RemoteHost(), strconv.Itoa(con.t.RemotePort())))
+
 	if err != nil {
-		
-		con.t.Close()
+
+		t.Close()
 		return
 	}
-	
-	go openConnectionOnDemand(con)
+
+	go t.openConnectionOnDemand(con)
 }
 
 // Reads 'NewConnection' request, creates the connection and sends 'Created' response
-func openConnectionOnDemand(conn net.Conn) {
-	
-	connReader := bufio.NewReader(conn)
-	connWriter := bufio.NewWriter(conn)
+func (t *Tunnel) openConnectionOnDemand(conn *conn) {
+
+	connReader := bufio.NewReader(conn.remoteConn)
+	connWriter := bufio.NewWriter(conn.remoteConn)
 
 	for {
 		command, errR := connReader.ReadString('\n')
-		
+
 		if errR != nil {
 
-			conn.t.Close()
+			t.Close()
 			break
 		}
-		
+
 		msg := command[:len(command)-1]
-		
+
 		if msg == "NewConnection" {
-			
-			establish()
+
+			t.establish()
 			_, errW := connWriter.WriteString("Created\n")
-			
+
 			if errW != nil {
-					
-				conn.t.Close()
-				break;
+
+				t.Close()
+				break
 			}
-		
+
 			connWriter.Flush()
 		}
 	}
 }
 
 func (t *Tunnel) establish() {
-	
+
 	c := &conn{t: t}
 	go c.open()
 }
