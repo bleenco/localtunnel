@@ -73,7 +73,6 @@ type Tunnel struct {
 	localPort  int
 	subdomain  string
 	url        string
-	maxConn    int
 }
 
 func (t *Tunnel) RemoteHost() string { return t.remoteHost }
@@ -84,9 +83,6 @@ func (t *Tunnel) Subdomain() string  { return t.subdomain }
 
 // URL at which the localtunnel is exposed.
 func (t *Tunnel) URL() string { return t.url }
-
-// MaxConn is the maximum number of connections allowed.
-func (t *Tunnel) MaxConn() int { return t.maxConn }
 
 // Open setup the tunnel creating connections between the remote and local servers.
 func (t *Tunnel) Open() error {
@@ -115,7 +111,6 @@ func (t *Tunnel) Close() {
 
 	t.remoteHost = ""
 	t.remotePort = 0
-	t.maxConn = 0
 	t.subdomain = ""
 	t.url = ""
 	close(t.closeCh)
@@ -136,10 +131,9 @@ func (t *Tunnel) setup(subdomain string) error {
 	defer resp.Body.Close()
 
 	var i struct {
-		ID      string `json:"id,omitempty"`
-		URL     string `json:"url,omitempty"`
-		Port    int    `json:"port,omitempty"`
-		MaxConn int    `json:"max_conn_count,omitempty"`
+		ID   string `json:"id,omitempty"`
+		URL  string `json:"url,omitempty"`
+		Port int    `json:"port,omitempty"`
 	}
 
 	d := json.NewDecoder(resp.Body)
@@ -150,7 +144,6 @@ func (t *Tunnel) setup(subdomain string) error {
 
 	t.remoteHost = resp.Request.URL.Host
 	t.remotePort = i.Port
-	t.maxConn = i.MaxConn
 	t.subdomain = i.ID
 	t.url = i.URL
 

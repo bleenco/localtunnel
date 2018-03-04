@@ -10,10 +10,9 @@ var domain string
 var secure bool
 
 type createdResp struct {
-	ID      string `json:"id,omitempty"`
-	URL     string `json:"url,omitempty"`
-	Port    int    `json:"port,omitempty"`
-	MaxConn int    `json:"max_conn_count,omitempty"`
+	ID   string `json:"id,omitempty"`
+	URL  string `json:"url,omitempty"`
+	Port int    `json:"port,omitempty"`
 }
 
 type statusResponse struct {
@@ -36,10 +35,9 @@ func handleNew(w http.ResponseWriter, r *http.Request) {
 	proxy.setup()
 
 	resp := &createdResp{
-		ID:      id,
-		URL:     getProto() + id + "." + domain,
-		Port:    proxy.port,
-		MaxConn: 10,
+		ID:   id,
+		URL:  getProto() + id + "." + domain,
+		Port: proxy.port,
 	}
 
 	go proxy.listen()
