@@ -1,6 +1,7 @@
 package localtunnel
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"net"
@@ -23,12 +24,13 @@ type Socket struct {
 
 // Proxy holds data of the Proxy TCP Server
 type Proxy struct {
-	id      string
-	server  net.Listener
-	port    int
-	sockets []*Socket
-	logger  log.Interface
-	mux     sync.Mutex
+	id            string
+	server        net.Listener
+	port          int
+	sockets       []*Socket
+	controlSocket *Socket
+	logger        log.Interface
+	mux           sync.Mutex
 }
 
 var proxies = make(map[string]*Proxy)
@@ -73,6 +75,13 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 		conn: conn,
 		data: make(chan []byte),
 	}
+
+	if p.controlSocket == nil {
+		// controlSocket is handled differently from other sockets
+		p.controlSocket = s
+		return
+	}
+
 	p.sockets = append(p.sockets, s)
 	p.logger.WithField("socketID", s.id).Infof("new tcp connection %s <> %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 
@@ -92,7 +101,47 @@ func (p *Proxy) handleConnection(conn net.Conn) {
 	}
 }
 
+func (p *Proxy) askNewClientConnection(w http.ResponseWriter, r *http.Request) {
+
+	conn := p.controlSocket.conn
+	connWriter := bufio.NewWriter(conn)
+	_, errW := connWriter.WriteString("NewConnection\n")
+
+	if errW != nil {
+
+		p.logger.Errorf("Unable to send 'NewConnection' request: %s", errW)
+		conn.Close()
+		p.cleanUpSocket(p.controlSocket)
+		return
+	}
+
+	connWriter.Flush()
+
+	go func() {
+
+		connReader := bufio.NewReader(conn)
+		command, errR := connReader.ReadString('\n')
+
+		if errR != nil {
+
+			p.logger.Errorf("Unable to read response from client: %s", errR)
+			conn.Close()
+			p.cleanUpSocket(p.controlSocket)
+			return
+		}
+
+		response := command[:len(command)-1]
+
+		// when clients replies 'Created', do handleRequest(w, r)
+		if response == "Created" {
+
+			p.handleRequest(w, r)
+		}
+	}()
+}
+
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
+
 	socket, err := p.getSocket()
 	if err != nil {
 		p.logger.Errorf("error finding available tcp connection: %s", err)
@@ -160,6 +209,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) getSocket() (*Socket, error) {
+
 	for i := range p.sockets {
 		if !p.sockets[i].inUse {
 			return p.sockets[i], nil
